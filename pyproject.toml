@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bibfmt"
+version = "0.1.0"
+description = "Formatting BibTeX files"
+readme = "README.md"
+authors = [
+    { name = "Jonas Hölscher", email = "hoelscher@emt.uni-paderborn.de" }
+]
+dependencies = [
+    "tree-sitter",
+    "tree-sitter-bibtex @ git+https://github.com/latex-lsp/tree-sitter-bibtex.git@master"
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+    "pyright"
+]

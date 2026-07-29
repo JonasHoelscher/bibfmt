@@ -18,7 +18,13 @@ def make_tree_sitter_bibtex_parseable(text: str) -> str:
     There is a bug in the used treesitter grammar:
         @entry (KEY) is allowed but an additional ' ' cannot be parsed:
         @entry ( KEY) is not allowed.
-    This function removes such a emptyspace to make it parseable
+    This function removes such a emptyspace to make it parseable.
+
+    Parameters:
+        text (str): Text which is made parseable
+
+    Returns:
+        str: Parseable text
     """
     return re.sub(
         r"(@[A-Za-z][A-Za-z0-9_-]*\s*[\{\(])\s+",
@@ -28,14 +34,29 @@ def make_tree_sitter_bibtex_parseable(text: str) -> str:
 
 
 def node_text(source: bytes, node: Node) -> str:
+    """
+    Decodes the text for the given node.
+
+    Parameters:
+        source (bytes): Total text in bytes (which contains the node text).
+        node (Node): Node for which the text is decoded.
+
+    Returns:
+        str: Decoded text.
+    """
     return source[node.start_byte : node.end_byte].decode("UTF-8")
 
 
 def make_one_line(text: str) -> str:
     """
     Replace line breaks and their surrounding indentation with one space.
-
     Spaces that already occur within a line are left unchanged.
+
+    Parameters:
+        text (str): Text which is made to one line.
+
+    Returns:
+        str: One line text.
     """
     return re.sub(
         r"[ \t]*(?:\r\n|\r|\n)[ \t]*",
@@ -45,6 +66,16 @@ def make_one_line(text: str) -> str:
 
 
 def has_opening_delimiter(source: bytes, type_node: Node) -> bool:
+    """
+    Checks if the type_node has an opening delimiter.
+
+    Parameters:
+        source (bytes): Total text in bytes.
+        type_node (Node): Node to check.
+
+    Returns:
+        bool: True if an opening delimiter ("{", "(") is found.
+    """
     index = type_node.end_byte
 
     while index < len(source) and source[index] in b" \t\r\n":
@@ -56,6 +87,17 @@ def has_opening_delimiter(source: bytes, type_node: Node) -> bool:
 
 
 def format_entry(source: bytes, node: Node, indent: str) -> str:
+    """
+    Formats an entry node.
+
+    Parameters:
+        source (bytes): Total text in bytes.
+        node (Node): Node to format as entry.
+        indent (str): Indentation with is prefixed for each field of the node.
+
+    Returns:
+        str: Formatted text.
+    """
     original = node_text(source, node)
 
     # Do not modify malformed entries
@@ -106,6 +148,16 @@ def format_entry(source: bytes, node: Node, indent: str) -> str:
 
 
 def format_string(source: bytes, node: Node) -> str:
+    """
+    Formats a string node.
+
+    Parameters:
+        source (bytes): Total text in bytes.
+        node (Node): Node to format as entry.
+
+    Returns:
+        str: Formatted text.
+    """
     original = node_text(source, node)
 
     if node.has_error:
@@ -129,6 +181,16 @@ def format_string(source: bytes, node: Node) -> str:
 
 
 def format_preamble(source: bytes, node: Node) -> str:
+    """
+    Formats a preamble node.
+
+    Parameters:
+        source (bytes): Total text in bytes.
+        node (Node): Node to format as entry.
+
+    Returns:
+        str: Formatted text.
+    """
     original = node_text(source, node)
 
     if node.has_error:
@@ -150,10 +212,30 @@ def format_preamble(source: bytes, node: Node) -> str:
 
 
 def format_comment(source: bytes, node: Node) -> str:
+    """
+    Formats a comment node. Comments stay as they are.
+
+    Parameters:
+        source (bytes): Total text in bytes.
+        node (Node): Node to format as entry.
+
+    Returns:
+        str: Formatted text.
+    """
     return node_text(source, node)
 
 
 def format_bibtex(text: str, indent: str = "    ") -> str:
+    """
+    Formats a given BibTeX text.
+
+    Parameters:
+        text (str): Total text to format.
+        indent (str): Indentation used for entry fields.
+
+    Returns:
+        str: Formatted text.
+    """
     source = make_tree_sitter_bibtex_parseable(text).encode("utf-8")
     tree = PARSER.parse(source)
 

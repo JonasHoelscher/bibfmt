@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    """
+    Main function to execute the formatting.
+    """
     argument_parser = argparse.ArgumentParser(
         description="Format a BibTeX file"
     )

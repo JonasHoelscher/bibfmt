@@ -2,10 +2,14 @@
 
 # Standard libraries
 import argparse
+import logging
+import sys
 from pathlib import Path
 
 # Local libraries
 from .formatter import format_bibtex
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -13,7 +17,9 @@ def main():
         description="Format a BibTeX file"
     )
 
-    argument_parser.add_argument("file", type=Path)
+    argument_parser.add_argument(
+        "file", nargs="?", default="-", help="BibTeX file or - for stdin"
+    )
 
     argument_parser.add_argument(
         "-o",
@@ -34,13 +40,22 @@ def main():
     if args.indent is not None:
         indent = args.indent
 
-    original = args.file.read_text(encoding="utf-8")
+    if args.file == "-":
+        if args.overwrite:
+            logger.error("--overwrite ccanot be used with stdin")
+
+        source = sys.stdin.read()
+        sys.stdout.write(format_bibtex(source))
+        return
+
+    path = Path(args.file)
+    original = path.read_text(encoding="utf-8")
     formatted = format_bibtex(original, indent)
 
     if args.overwrite:
         args.file.write_text(formatted, encoding="utf-8")
     else:
-        print(formatted, end="")
+        sys.stdout.write(formatted)
 
 
 if __name__ == "__main__":

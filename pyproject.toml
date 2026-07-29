@@ -22,7 +22,7 @@ keywords = [
 ]
 dependencies = [
     "tree-sitter",
-    "tree-sitter-bibtex @ git+https://github.com/latex-lsp/tree-sitter-bibtex.git@master"
+    "tree-sitter-language-pack"
 ]
 
 [project.scripts]

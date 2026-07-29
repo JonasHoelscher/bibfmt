@@ -5,11 +5,11 @@ import logging
 import re
 
 # Third party libraries
-import tree_sitter_bibtex as tsbibtex
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Node, Parser
+from tree_sitter_language_pack import get_language
 
 logger = logging.getLogger(__name__)
-BIBTEX_LANGUAGE = Language(tsbibtex.language())
+BIBTEX_LANGUAGE = get_language("bibtex")
 PARSER = Parser(BIBTEX_LANGUAGE)
 
 

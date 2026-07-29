@@ -15,14 +15,28 @@ if __name__ == "__main__":
     argument_parser.add_argument("file", type=Path)
 
     argument_parser.add_argument(
-        "-i", "--in-place", action="store_true", help="Overwrite the input file"
+        "-o",
+        "--overwrite",
+        action="store_true",
+        help="Overwrite the input file",
+    )
+    argument_parser.add_argument(
+        "-i",
+        "--indent",
+        type=str,
+        help="Set indentation",
     )
 
     args = argument_parser.parse_args()
-    original = args.file.read_text(encoding="utf-8")
-    formatted = format_bibtex(original)
 
-    if args.in_place:
+    indent = "    "
+    if args.indent is not None:
+        indent = args.indent
+
+    original = args.file.read_text(encoding="utf-8")
+    formatted = format_bibtex(original, indent)
+
+    if args.overwrite:
         args.file.write_text(formatted, encoding="utf-8")
     else:
         print(formatted, end="")

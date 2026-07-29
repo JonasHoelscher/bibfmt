@@ -7,12 +7,12 @@ An opinionated formatter for BibTeX files.
 Install using pip. Run using
 
 ```bash
-usage: __main__.py [-h] [-o] [-i INDENT] file
+usage: bibfmt [-h] [-o] [-i INDENT] [file]
 
 Format a BibTeX file
 
 positional arguments:
-  file
+  file                 BibTeX file or - for stdin
 
 options:
   -h, --help           show this help message and

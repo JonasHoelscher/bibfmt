@@ -15,6 +15,9 @@ dependencies = [
     "tree-sitter-bibtex @ git+https://github.com/latex-lsp/tree-sitter-bibtex.git@master"
 ]
 
+[project.scripts]
+bibfmt = "bibfmt:main"
+
 [project.optional-dependencies]
 dev = [
     "ruff",

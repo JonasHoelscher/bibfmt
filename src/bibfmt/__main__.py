@@ -7,7 +7,8 @@ from pathlib import Path
 # Local libraries
 from .formatter import format_bibtex
 
-if __name__ == "__main__":
+
+def main():
     argument_parser = argparse.ArgumentParser(
         description="Format a BibTeX file"
     )
@@ -40,3 +41,7 @@ if __name__ == "__main__":
         args.file.write_text(formatted, encoding="utf-8")
     else:
         print(formatted, end="")
+
+
+if __name__ == "__main__":
+    main()

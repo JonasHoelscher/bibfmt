@@ -7,16 +7,21 @@ An opinionated formatter for BibTeX files.
 Install using pip. Run using
 
 ```bash
-usage: bibfmt [-h] [-o] [-i INDENT] [file]
+usage: bibfmt [-h] [--sort_global] [-o OUTPUT_FILE]
+              [-i INDENT]
+              [file]
 
 Format a BibTeX file
 
 positional arguments:
-  file                 BibTeX file or - for stdin
+  file                  BibTeX file or - for stdin
 
 options:
-  -h, --help           show this help message and
-                       exit
-  -o, --overwrite      Overwrite the input file
-  -i, --indent INDENT  Set indentation
+  -h, --help            show this help message and
+                        exit
+  --sort_global         Set to sort the entries
+                        globally.
+  -o, --output_file OUTPUT_FILE
+                        Output file
+  -i, --indent INDENT   Set indentation
 ```

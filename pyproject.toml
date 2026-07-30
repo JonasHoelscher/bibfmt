@@ -25,6 +25,10 @@ dependencies = [
     "tree-sitter-language-pack"
 ]
 
+[project.urls]
+homepage = "https://ei.uni-paderborn.de/en/emt/home"
+source = "https://github.com/JonasHoelscher/bibfmt"
+
 [project.scripts]
 bibfmt = "bibfmt:main"
 

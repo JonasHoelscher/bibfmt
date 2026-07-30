@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # Local libraries
-from .formatter import format_bibtex
+from .formatter import parse_bib
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,15 @@ def main():
     )
 
     argument_parser.add_argument(
+        "--sort_global",
+        action="store_false",
+        help="Set to sort the entries globally.",
+    )
+    argument_parser.add_argument(
         "-o",
-        "--overwrite",
-        action="store_true",
-        help="Overwrite the input file",
+        "--output_file",
+        type=str,
+        help="Output file",
     )
     argument_parser.add_argument(
         "-i",
@@ -43,22 +48,36 @@ def main():
     if args.indent is not None:
         indent = args.indent
 
+    # If - is given write to stdout
     if args.file == "-":
-        if args.overwrite:
-            logger.error("--overwrite ccanot be used with stdin")
+        if args.output_file:
+            logger.error("--output_file cannot be used with stdin")
 
         source = sys.stdin.read()
-        sys.stdout.write(format_bibtex(source))
+        bib = parse_bib(source, indent)
+
+        if args.sort_global:
+            bib.sort_global()
+
+        sys.stdout.write(bib.get_text())
         return
 
-    path = Path(args.file)
-    original = path.read_text(encoding="utf-8")
-    formatted = format_bibtex(original, indent)
+    input_path = Path(args.file)
+    original = input_path.read_text(encoding="utf-8")
+    bib = parse_bib(original, indent)
 
-    if args.overwrite:
-        args.file.write_text(formatted, encoding="utf-8")
+    if args.sort_global:
+        bib.sort_global()
+
+    formatted = bib.get_text()
+
+    # If output file is given write to it
+    if args.output_file:
+        output_path = Path(args.output_file)
+        output_path.write_text(formatted, encoding="utf-8")
     else:
-        sys.stdout.write(formatted)
+        # Otherwise write to the given file
+        input_path.write_text(formatted)
 
 
 if __name__ == "__main__":

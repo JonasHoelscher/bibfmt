@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
 # Standard libraries
+import heapq
 import logging
 import re
+from dataclasses import dataclass
+from enum import Enum, auto
 
 # Third party libraries
 from tree_sitter import Node, Parser
@@ -13,24 +16,302 @@ BIBTEX_LANGUAGE = get_language("bibtex")
 PARSER = Parser(BIBTEX_LANGUAGE)
 
 
-def make_tree_sitter_bibtex_parseable(text: str) -> str:
+class BlockType(Enum):
+    Entry = auto()
+    String = auto()
+    Preamble = auto()
+    Comment = auto()
+    Raw = auto()
+
+
+@dataclass(slots=True)
+class Block:
+    kind: BlockType
+    formatted_text: str
+    original_index: int
+
+    key: str | None = None
+    crossref: str | None = None
+    leading_text: str = ""
+
+    @classmethod
+    def from_node(cls, source, node, original_index, indent, leading_text):
+        match node.type:
+            case "entry":
+                key_node = node.child_by_field_name("key")
+
+                key = None
+                if key_node is not None:
+                    key = make_one_line(node_text(source, key_node))
+
+                return cls(
+                    kind=BlockType.Entry,
+                    formatted_text=format_entry(source, node, indent),
+                    original_index=original_index,
+                    key=key,
+                    crossref=extract_crossref(source, node),
+                    leading_text=leading_text,
+                )
+
+            case "string":
+                return cls(
+                    kind=BlockType.String,
+                    formatted_text=format_string(source, node),
+                    original_index=original_index,
+                    leading_text=leading_text,
+                )
+
+            case "preamble":
+                return cls(
+                    kind=BlockType.Preamble,
+                    formatted_text=format_preamble(source, node),
+                    original_index=original_index,
+                    leading_text=leading_text,
+                )
+
+            case "comment":
+                return cls(
+                    kind=BlockType.Comment,
+                    formatted_text=format_comment(source, node),
+                    original_index=original_index,
+                    leading_text=leading_text,
+                )
+
+            case _:
+                return cls(
+                    kind=BlockType.Raw,
+                    formatted_text=node_text(source, node),
+                    original_index=original_index,
+                    leading_text=leading_text,
+                )
+
+
+@dataclass(slots=True)
+class Bib:
+    blocks: list[Block]
+    header_text: str = ""
+    trailing_text: str = ""
+
+    @staticmethod
+    def _alphabetical_key(block: Block) -> tuple[str, int]:
+        """
+        Sorting key with deterministic fallback to the original position.
+        """
+        return (
+            block.key.casefold() if block.key is not None else "",
+            block.original_index,
+        )
+
+    @classmethod
+    def _sort_entries(cls, entries: list[Block]) -> list[Block]:
+        """
+        Sort entries alphabetically while respecting crossref dependencies.
+
+        For
+            @inproceedings{Child,
+                crossref = {Parent},
+            }
+
+            @proceedings{Parent, ...}
+
+        Child is kept before Parent.
+        """
+        if len(entries) < 2:
+            return entries.copy()
+
+        key_to_index: dict[str, int] = {}
+
+        for index, block in enumerate(entries):
+            if block.key is None:
+                continue
+
+            normalized_key = block.key.casefold()
+
+            if normalized_key in key_to_index:
+                logger.warning(
+                    "Duplicate BibTeX key encountered: %s",
+                    block.key,
+                )
+                continue
+
+            key_to_index[normalized_key] = index
+
+        # Edge child -> parent:
+        # the child must occur before the cross-referenced parent.
+        outgoing: list[list[int]] = [[] for _ in entries]
+        indegree = [0 for _ in entries]
+
+        for child_index, child in enumerate(entries):
+            if child.crossref is None:
+                continue
+
+            parent_index = key_to_index.get(child.crossref.casefold())
+
+            # The parent may be in a different section or not in this file.
+            if parent_index is None or parent_index == child_index:
+                continue
+
+            outgoing[child_index].append(parent_index)
+            indegree[parent_index] += 1
+
+        available: list[tuple[str, int, int]] = []
+
+        for index, block in enumerate(entries):
+            if indegree[index] == 0:
+                key, original_index = cls._alphabetical_key(block)
+                heapq.heappush(
+                    available,
+                    (key, original_index, index),
+                )
+
+        result: list[Block] = []
+        processed: set[int] = set()
+
+        while available:
+            _, _, index = heapq.heappop(available)
+
+            if index in processed:
+                continue
+
+            processed.add(index)
+            result.append(entries[index])
+
+            for target_index in outgoing[index]:
+                indegree[target_index] -= 1
+
+                if indegree[target_index] == 0:
+                    target = entries[target_index]
+                    key, original_index = cls._alphabetical_key(target)
+
+                    heapq.heappush(
+                        available,
+                        (key, original_index, target_index),
+                    )
+
+        if len(result) != len(entries):
+            logger.warning(
+                "Crossref cycle detected; sorting remaining entries "
+                "alphabetically"
+            )
+
+            remaining = [
+                block
+                for index, block in enumerate(entries)
+                if index not in processed
+            ]
+
+            remaining.sort(key=cls._alphabetical_key)
+            result.extend(remaining)
+
+        return result
+
+    def sort_global(self):
+        """
+        Sort all entries globally. Non-entr blocks retain their position.
+        """
+        entries = [e for e in self.blocks if e.kind == BlockType.Entry]
+        sorted_entries = iter(self._sort_entries(entries))
+
+        self.blocks = [
+            next(sorted_entries) if block.kind is BlockType.Entry else block
+            for block in self.blocks
+        ]
+
+    @staticmethod
+    def _render_block(block: Block) -> str:
+        parts: list[str] = []
+
+        leading_text = block.leading_text.strip()
+        formatted_text = block.formatted_text.strip()
+
+        if leading_text:
+            parts.append(leading_text)
+
+        if formatted_text:
+            parts.append(formatted_text)
+
+        return "\n".join(parts)
+
+    def get_text(self):
+        parts: list[str] = []
+
+        header = self.header_text.strip()
+        if header:
+            parts.append(header)
+
+        for block in self.blocks:
+            rendered = self._render_block(block)
+
+            if rendered:
+                parts.append(rendered)
+
+        trailing = self.trailing_text.strip()
+        if trailing:
+            parts.append(trailing)
+
+        if not parts:
+            return ""
+
+        return "\n\n".join(parts) + "\n"
+
+
+def unwrap_bibtex_value(value: str) -> str:
     """
-    There is a bug in the used treesitter grammar:
-        @entry (KEY) is allowed but an additional ' ' cannot be parsed:
-        @entry ( KEY) is not allowed.
-    This function removes such a emptyspace to make it parseable.
+    Remove one pair of surrounding braces or quotation marks.
+
+    Examples:
+        "{Proceedings2026}" -> "Proceedings2026"
+        '"Proceedings2026"' -> "Proceedings2026"
+        "proceedings"       -> "proceedings"
 
     Parameters:
-        text (str): Text which is made parseable
+        value (str): Value which is unwrapped.
 
     Returns:
-        str: Parseable text
+        str: Unwrapped text.
     """
-    return re.sub(
-        r"(@[A-Za-z][A-Za-z0-9_-]*\s*[\{\(])\s+",
-        r"\1",
-        text,
-    )
+    value = value.strip()
+
+    if len(value) >= 2:
+        delimiters = (value[0], value[-1])
+
+        if delimiters in {
+            ("{", "}"),
+            ('"', '"'),
+        }:
+            return value[1:-1].strip()
+
+    return value
+
+
+def extract_crossref(source: bytes, entry_node: Node) -> str | None:
+    """
+    Extract the crossref target of an entry.
+
+    Parameters:
+        source (bytes): Total source.
+        entry_node (Node): Current node to extract crossref from.
+
+    Returns:
+        str | None: None if the entry does not contain a crossref field.
+            Otherwise the key is returned.
+    """
+    for field_node in entry_node.children_by_field_name("field"):
+        name_node = field_node.child_by_field_name("name")
+        value_node = field_node.child_by_field_name("value")
+
+        if name_node is None or value_node is None:
+            continue
+
+        name = node_text(source, name_node).strip().casefold()
+
+        if name != "crossref":
+            continue
+
+        value = make_one_line(node_text(source, value_node))
+        return unwrap_bibtex_value(value)
+
+    return None
 
 
 def node_text(source: bytes, node: Node) -> str:
@@ -225,56 +506,55 @@ def format_comment(source: bytes, node: Node) -> str:
     return node_text(source, node)
 
 
-def format_bibtex(text: str, indent: str = "    ") -> str:
+def make_tree_sitter_bibtex_parseable(text: str) -> str:
     """
-    Formats a given BibTeX text.
+    There is a bug in the used treesitter grammar:
+        @entry (KEY) is allowed but an additional ' ' cannot be parsed:
+        @entry ( KEY) is not allowed.
+    This function removes such an empty space to make it parseable.
 
     Parameters:
-        text (str): Total text to format.
-        indent (str): Indentation used for entry fields.
+        text (str): Text which is made parseable
 
     Returns:
-        str: Formatted text.
+        str: Parseable text
     """
-    source = make_tree_sitter_bibtex_parseable(text).encode("utf-8")
+    return re.sub(
+        r"(@[A-Za-z][A-Za-z0-9_-]*\s*[\{\(])\s+",
+        r"\1",
+        text,
+    )
+
+
+def parse_bib(text: str, indent: str) -> Bib:
+    text = make_tree_sitter_bibtex_parseable(text)
+    source = text.encode("utf-8")
     tree = PARSER.parse(source)
+    nodes = list(tree.root_node.named_children)
 
-    replacements: list[tuple[int, int, bytes]] = []
-    consumed_until = 0
+    if not nodes:
+        return Bib(blocks=[], header_text=text)
 
-    for node in tree.root_node.named_children:
-        if node.start_byte < consumed_until:
+    blocks: list[Block] = []
+    header_text = source[: nodes[0].start_byte].decode("utf-8")
+    previous_end = nodes[0].start_byte
+
+    for original_index, node in enumerate(nodes):
+        if node.start_byte < previous_end:
             continue
 
-        match node.type:
-            case "entry":
-                formatted = format_entry(source, node, indent)
-                end = node.end_byte
-            case "string":
-                formatted = format_string(source, node)
-                end = node.end_byte
-            case "preamble":
-                formatted = format_preamble(source, node)
-                end = node.end_byte
-            case "comment":
-                formatted = format_comment(source, node)
-                end = node.end_byte
-            case _:
-                # Preserve junk, %-comments and other unrecognized text
-                continue
+        if blocks:
+            leading_text = source[previous_end : node.start_byte].decode(
+                "utf-8"
+            )
+        else:
+            leading_text = ""
+        blocks.append(
+            Block.from_node(source, node, original_index, indent, leading_text)
+        )
 
-        replacements.append((node.start_byte, end, formatted.encode("utf-8")))
+        previous_end = node.end_byte
 
-        consumed_until = end
+    trailing_text = source[previous_end:].decode("utf-8")
 
-    result = bytearray()
-    cursor = 0
-
-    for start, end, replacement in replacements:
-        result.extend(source[cursor:start])
-        result.extend(replacement)
-        cursor = end
-
-    result.extend(source[cursor:])
-
-    return result.decode("utf-8")
+    return Bib(blocks, header_text, trailing_text)

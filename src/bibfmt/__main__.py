@@ -77,7 +77,7 @@ def main():
         output_path.write_text(formatted, encoding="utf-8")
     else:
         # Otherwise write to the given file
-        input_path.write_text(formatted)
+        sys.stdout.write(formatted)
 
 
 if __name__ == "__main__":
